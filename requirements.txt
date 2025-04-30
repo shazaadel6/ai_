@@ -3,3 +3,4 @@ requests
 opencv-python-headless
 ultralytics
 nest_asyncio
+gunicorn
