@@ -10,7 +10,7 @@ nest_asyncio.apply()
 app = Flask(__name__)
 
 # تحميل النموذج
-model = YOLO("best.pt")  # لازم ترفع الملف ده مع المشروع
+model = YOLO("best.pt")  # تأكد إن الملف موجود في نفس مجلد الكود
 
 # ترجمة الفئات
 label_translation = {
@@ -25,8 +25,12 @@ last_sent_time = 0
 
 def generate_frames():
     global last_label, last_sent_time
-    ip_camera_url = "http://<Tailscale_or_public_IP>:8080/video"  # عدّلي هنا
+    ip_camera_url = "http://192.168.1.4:8080/video"  # ✅ تم التعديل هنا
     cap = cv2.VideoCapture(ip_camera_url)
+
+    if not cap.isOpened():
+        print("❌ لم يتم الاتصال بالكاميرا")
+        return
 
     while True:
         success, frame = cap.read()
@@ -37,45 +41,45 @@ def generate_frames():
 
         try:
             results = model(frame, verbose=False)
+            result = results[0] if isinstance(results, list) else results
         except Exception as e:
             print(f"❌ YOLO Error: {e}")
             continue
 
-        for result in results:
-            boxes = result.boxes.xyxy.cpu().numpy()
-            scores = result.boxes.conf.cpu().numpy()
-            classes = result.boxes.cls.cpu().numpy()
+        boxes = result.boxes.xyxy.cpu().numpy()
+        scores = result.boxes.conf.cpu().numpy()
+        classes = result.boxes.cls.cpu().numpy()
 
-            for i in range(len(boxes)):
-                conf = float(scores[i])
-                if conf < 0.75:
-                    continue
+        for i in range(len(boxes)):
+            conf = float(scores[i])
+            if conf < 0.75:
+                continue
 
-                x1, y1, x2, y2 = boxes[i].astype(int)
-                class_id = int(classes[i])
-                label = model.names[class_id]
-                arabic_label = label_translation.get(label, label)
+            x1, y1, x2, y2 = boxes[i].astype(int)
+            class_id = int(classes[i])
+            label = model.names[class_id]
+            arabic_label = label_translation.get(label, label)
 
-                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                cv2.putText(frame, f"{arabic_label} ({conf:.2f})",
-                            (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX,
-                            0.7, (0, 255, 0), 2)
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            cv2.putText(frame, f"{arabic_label} ({conf:.2f})",
+                        (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX,
+                        0.7, (0, 255, 0), 2)
 
-                if label in ["Sick", "Dead"]:
-                    if (label != last_label or time.time() - last_sent_time > 10):
-                        data = {
-                            "body": f"فرخة {arabic_label}",
-                            "userId": 24,
-                            "barnId": 3,
-                            "isRead": False
-                        }
-                        try:
-                            requests.post(api_url, json=data)
-                            print(f"🚨 إشعار: {data['body']}")
-                            last_label = label
-                            last_sent_time = time.time()
-                        except Exception as e:
-                            print(f"❌ خطأ إرسال الإشعار: {e}")
+            if label in ["Sick", "Dead"]:
+                if (label != last_label or time.time() - last_sent_time > 10):
+                    data = {
+                        "body": f"فرخة {arabic_label}",
+                        "userId": 24,
+                        "barnId": 3,
+                        "isRead": False
+                    }
+                    try:
+                        requests.post(api_url, json=data)
+                        print(f"🚨 إشعار: {data['body']}")
+                        last_label = label
+                        last_sent_time = time.time()
+                    except Exception as e:
+                        print(f"❌ خطأ إرسال الإشعار: {e}")
 
         ret, buffer = cv2.imencode('.jpg', frame)
         if not ret:
